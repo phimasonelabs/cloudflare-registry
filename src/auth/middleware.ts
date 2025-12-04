@@ -128,6 +128,55 @@ export function requirePermission(permission: 'read' | 'write' | 'owner') {
             return c.json({ error: 'Repository name required' }, 400);
         }
 
+        // If using PAT, validate scopes first
+        if (auth.scopes) {
+            const scopeMap: Record<string, string[]> = {
+                'read': ['registry:read', 'registry:write', 'registry:admin'],
+                'write': ['registry:write', 'registry:admin'],
+                'owner': ['registry:admin']
+            };
+
+            const requiredScopes = scopeMap[permission];
+            const hasRequiredScope = auth.scopes.some(scope => requiredScopes.includes(scope));
+
+            if (!hasRequiredScope) {
+                return c.json({
+                    error: `Insufficient permissions: Token requires ${requiredScopes.join(' or ')} scope`
+                }, 403);
+            }
+
+            // For PAT with valid scopes, allow repository creation on write
+            const repo = await db.getRepositoryByName(repoName);
+            if (!repo && permission === 'write') {
+                await db.createRepository(repoName, auth.user.id, undefined, false);
+            }
+
+            // PAT scopes are valid, allow the request
+            await next();
+            return;
+        }
+
+        // For non-PAT authentication (session tokens), check database permissions
+        // Check if repository exists
+        const repo = await db.getRepositoryByName(repoName);
+
+        // If repository doesn't exist and user wants write access,
+        // allow authenticated users to create new repositories
+        if (!repo && permission === 'write') {
+            // Create the repository with user as owner
+            await db.createRepository(repoName, auth.user.id, undefined, false);
+            await next();
+            return;
+        }
+
+        // For read permission on non-existing repo during push (HEAD requests), 
+        // allow if user is authenticated (they may be about to create it)
+        if (!repo && permission === 'read') {
+            // Allow authenticated users to check blobs even if repo doesn't exist yet
+            await next();
+            return;
+        }
+
         const userPerm = await db.getUserPermission(repoName, auth.user.id);
 
         // Calculate permission hierarchy: owner > write > read
@@ -152,3 +201,4 @@ export function requirePermission(permission: 'read' | 'write' | 'owner') {
         return c.json({ error: 'Forbidden' }, 403);
     };
 }
+
