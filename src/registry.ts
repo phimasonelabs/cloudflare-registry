@@ -182,8 +182,37 @@ export const createRegistry = (env: Env) => {
 
             console.log(`[${c.req.method} /v2/:name/manifests/:reference] Got manifest, size:`, manifest.size);
 
+            // Read the manifest body to calculate digest
+            let manifestBytes: Uint8Array;
+            if (manifest.body) {
+                const chunks: Uint8Array[] = [];
+                const reader = manifest.body.getReader();
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        chunks.push(value);
+                    }
+                } finally {
+                    reader.releaseLock();
+                }
+
+                // Combine all chunks
+                const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+                manifestBytes = new Uint8Array(totalLength);
+                let offset = 0;
+                for (const chunk of chunks) {
+                    manifestBytes.set(chunk, offset);
+                    offset += chunk.length;
+                }
+            } else {
+                throw new RegistryError('MANIFEST_INVALID', 'manifest body is empty', 500);
+            }
+
+            const digest = await calculateDigest(manifestBytes);
+
             c.header('Content-Type', manifest.httpMetadata?.contentType || 'application/json');
-            c.header('Docker-Content-Digest', 'sha256:TODO');
+            c.header('Docker-Content-Digest', digest);
             c.header('Content-Length', manifest.size.toString());
 
             if (isHead) {
@@ -191,7 +220,7 @@ export const createRegistry = (env: Env) => {
                 return c.body(null);
             } else {
                 // For GET, return the manifest body
-                return c.body(manifest.body as any);
+                return c.body(manifestBytes as any);
             }
         } catch (err) {
             console.error(`[${c.req.method} /v2/:name/manifests/:reference] Error:`, err);
