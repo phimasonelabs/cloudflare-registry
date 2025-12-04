@@ -127,37 +127,36 @@ export const createRegistry = (env: Env) => {
         return c.body(null);
     });
 
-    // 8. Pull Manifest
+    // 8. Pull Manifest (handles both GET and HEAD)
     app.get('/v2/:name/manifests/:reference', async (c) => {
-        const { name, reference } = c.req.param();
-        const manifest = await storage.getManifest(name, reference);
-        if (!manifest) {
-            throw new RegistryError('MANIFEST_UNKNOWN', 'manifest unknown', 404);
-        }
+        try {
+            const { name, reference } = c.req.param();
+            const isHead = c.req.method === 'HEAD';
+            console.log(`[${c.req.method} /v2/:name/manifests/:reference] Checking manifest:`, name, reference);
 
-        c.header('Content-Type', manifest.httpMetadata?.contentType || 'application/json');
-        c.header('Docker-Content-Digest', 'sha256:TODO');
-        c.header('Content-Length', manifest.size.toString());
+            const manifest = await storage.getManifest(name, reference);
 
-        return c.body(manifest.body as any);
-    });
+            if (!manifest) {
+                throw new RegistryError('MANIFEST_UNKNOWN', 'manifest unknown', 404);
+            }
 
-    // 9. Check Manifest
-    app.on('HEAD', '/v2/:name/manifests/:reference', async (c) => {
-        const { name, reference } = c.req.param();
-        const exists = await storage.hasManifest(name, reference);
-        if (!exists) {
-            c.status(404);
-            return c.body(null);
-        }
-        const manifest = await storage.getManifest(name, reference);
-        if (manifest) {
+            console.log(`[${c.req.method} /v2/:name/manifests/:reference] Got manifest, size:`, manifest.size);
+
             c.header('Content-Type', manifest.httpMetadata?.contentType || 'application/json');
-            c.header('Content-Length', manifest.size.toString());
             c.header('Docker-Content-Digest', 'sha256:TODO');
+            c.header('Content-Length', manifest.size.toString());
+
+            if (isHead) {
+                // For HEAD, return empty body
+                return c.body(null);
+            } else {
+                // For GET, return the manifest body
+                return c.body(manifest.body as any);
+            }
+        } catch (err) {
+            console.error(`[${c.req.method} /v2/:name/manifests/:reference] Error:`, err);
+            throw err;
         }
-        c.status(200);
-        return c.body(null);
     });
 
     return app;
