@@ -6,6 +6,12 @@ compatibility_flags = ["nodejs_compat"]
 [[r2_buckets]]
 binding = "REGISTRY_BUCKET"
 bucket_name = "container-registry-storage"
+
+# D1 Database for user authentication and permissions
+[[d1_databases]]
+binding = "DB"
+database_name = "registry-db"
+database_id = "9c925d2c-6eb5-4470-ac75-1b7230e784a2" # Will be replaced after creating the database
 preview_bucket_name = "container-registry-storage-preview"
 
 [observability]

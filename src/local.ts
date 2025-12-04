@@ -28,7 +28,13 @@ app.get('/api/repositories', async (c) => {
     }
 });
 
-const registry = createRegistry({ REGISTRY_BUCKET: bucket as any });
+const registry = createRegistry({ REGISTRY_BUCKET: bucket as any } as any);
+
+// Auth placeholder for local runner
+app.all('/auth/*', (c) => {
+    return c.text('Authentication is not supported in "start:local" mode.\nPlease run "npm run dev" (wrangler dev) to test authentication with D1 database support.', 501);
+});
+
 app.route('/', registry);
 
 console.log(`🦊 Local Registry is running at http://localhost:3000`);

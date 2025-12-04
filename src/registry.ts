@@ -2,16 +2,16 @@ import { Hono } from 'hono';
 import { RegistryStorage } from './storage';
 import { RegistryError, formatError } from './utils';
 import { calculateDigest } from './digest';
-
-// Define the environment type
-type Env = {
-    REGISTRY_BUCKET: any;
-};
+import { authMiddleware, dbMiddleware, requirePermission } from './auth/middleware';
+import { Env } from './types';
 
 export const createRegistry = (env: Env) => {
     const storage = new RegistryStorage(env.REGISTRY_BUCKET);
 
     const app = new Hono<{ Bindings: Env }>();
+
+    // Apply database middleware
+    app.use('*', dbMiddleware());
 
     // Error handler
     app.onError((err, c) => {
@@ -22,14 +22,14 @@ export const createRegistry = (env: Env) => {
         return c.json(formatError('INTERNAL_ERROR', 'Internal Server Error'), 500);
     });
 
-    // 1. Base Check
+    // 1. Base Check (no auth required)
     app.get('/v2/', (c) => {
         c.header('Docker-Distribution-Api-Version', 'registry/2.0');
         return c.json({});
     });
 
-    // 2. Blob Existence Check
-    app.on('HEAD', '/v2/:name/blobs/:digest', async (c) => {
+    // 2. Blob Existence Check (requires read permission)
+    app.on('HEAD', '/v2/:name/blobs/:digest', authMiddleware(false), requirePermission('read'), async (c) => {
         const { name, digest } = c.req.param();
         const exists = await storage.hasBlob(name, digest);
         if (!exists) {
@@ -45,12 +45,13 @@ export const createRegistry = (env: Env) => {
         return c.body(null);
     });
 
-    // 3. Pull Blob
-    app.get('/v2/:name/blobs/:digest', async (c) => {
+    // 3. Pull Blob (requires read permission)
+    app.get('/v2/:name/blobs/:digest', authMiddleware(false), requirePermission('read'), async (c) => {
         const { name, digest } = c.req.param();
         const blob = await storage.getBlob(name, digest);
         if (!blob) {
-            throw new RegistryError('BLOB_UNKNOWN', 'blob unknown to registry', 404);
+            const error = new RegistryError('BLOB_UNKNOWN', `Blob ${digest} not found`, 404);
+            return c.json(formatError(error.code, error.message), 404);
         }
         c.header('Content-Type', 'application/octet-stream');
         c.header('Docker-Content-Digest', digest);
@@ -58,8 +59,8 @@ export const createRegistry = (env: Env) => {
         return c.body(blob.body as any);
     });
 
-    // 4. Initiate Upload
-    app.post('/v2/:name/blobs/uploads/', async (c) => {
+    // 4. Initiate Upload (requires write permission)
+    app.post('/v2/:name/blobs/uploads/', authMiddleware(true), requirePermission('write'), async (c) => {
         const { name } = c.req.param();
         const uuid = await storage.initUpload(name);
         c.status(202);
