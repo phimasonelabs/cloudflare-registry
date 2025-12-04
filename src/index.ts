@@ -1,6 +1,5 @@
-import { Elysia } from 'elysia';
-import { swagger } from '@elysiajs/swagger';
-import { registry } from './registry';
+import { Hono } from 'hono';
+import { createRegistry } from './registry';
 import { R2Bucket } from '@cloudflare/workers-types';
 
 // Env interface for Cloudflare Workers
@@ -8,13 +7,18 @@ interface Env {
     REGISTRY_BUCKET: R2Bucket;
 }
 
+const app = new Hono<{ Bindings: Env }>();
+
+app.get('/', (c) => c.text('Hello from Cloudflare Container Registry!'));
+
 export default {
     fetch(request: Request, env: Env, ctx: ExecutionContext) {
-        const app = new Elysia()
-            .use(swagger())
-            .get('/', () => 'Hello from Cloudflare Container Registry!')
-            .use(registry(env));
+        const registry = createRegistry(env);
+        const mainApp = new Hono<{ Bindings: Env }>();
 
-        return app.fetch(request);
+        mainApp.route('/', app);
+        mainApp.route('/', registry);
+
+        return mainApp.fetch(request, env, ctx);
     }
 };

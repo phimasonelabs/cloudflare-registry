@@ -10,12 +10,14 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@elysiajs/swagger": "^1.3.1",
-    "elysia": "^1.4.17",
+    "@hono/node-server": "^1.19.6",
+    "hono": "^4.10.7",
     "wrangler": "^4.52.1"
   },
   "scripts": {
     "dev": "wrangler dev",
+    "dev:debug": "wrangler dev --log-level debug",
+    "dev:bun": "bunx --bun wrangler dev",
     "deploy": "wrangler deploy",
     "start:local": "bun run src/local.ts",
     "test": "bun test"

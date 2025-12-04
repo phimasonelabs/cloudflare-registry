@@ -1,4 +1,4 @@
-import { Context } from 'elysia';
+import { Context } from 'hono';
 
 export interface OCIError {
     code: string;
@@ -21,13 +21,3 @@ export const formatError = (code: string, message: string, detail?: any) => ({
         }
     ]
 });
-
-export const handleErrors = (error: any, set: Context['set']) => {
-    if (error instanceof RegistryError) {
-        set.status = error.status;
-        return formatError(error.code, error.message, error.detail);
-    }
-    console.error(error);
-    set.status = 500;
-    return formatError('INTERNAL_ERROR', 'Internal Server Error');
-};

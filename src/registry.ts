@@ -1,166 +1,164 @@
-import { Elysia, t } from 'elysia';
+import { Hono } from 'hono';
 import { RegistryStorage } from './storage';
-import { RegistryError, handleErrors } from './utils';
+import { RegistryError, formatError } from './utils';
 import { calculateDigest } from './digest';
 
 // Define the environment type
 type Env = {
-    REGISTRY_BUCKET: any; // R2Bucket type isn't strictly checked at runtime here but injected
+    REGISTRY_BUCKET: any;
 };
 
-export const registry = (env: Env) => {
+export const createRegistry = (env: Env) => {
     const storage = new RegistryStorage(env.REGISTRY_BUCKET);
 
-    return new Elysia({ prefix: '/v2' })
-        .onError(({ code, error, set }) => {
-            return handleErrors(error, set);
-        })
-        // 1. Base Check
-        .get('/', ({ set }) => {
-            set.headers['Docker-Distribution-Api-Version'] = 'registry/2.0';
-            return {};
-        })
+    const app = new Hono<{ Bindings: Env }>();
 
-        // 2. Blob Existence Check
-        .head('/:name/blobs/:digest', async ({ params: { name, digest }, set }) => {
-            const exists = await storage.hasBlob(name, digest);
-            if (!exists) {
-                set.status = 404;
-                return;
-            }
-            const blob = await storage.getBlob(name, digest);
-            if (blob) {
-                set.headers['Content-Length'] = blob.size.toString();
-                set.headers['Docker-Content-Digest'] = digest;
-            }
-            set.status = 200;
-        })
+    // Error handler
+    app.onError((err, c) => {
+        if (err instanceof RegistryError) {
+            return c.json(formatError(err.code, err.message, err.detail), err.status as any);
+        }
+        console.error(err);
+        return c.json(formatError('INTERNAL_ERROR', 'Internal Server Error'), 500);
+    });
 
-        // 3. Pull Blob
-        .get('/:name/blobs/:digest', async ({ params: { name, digest }, set }) => {
-            const blob = await storage.getBlob(name, digest);
-            if (!blob) {
-                throw new RegistryError('BLOB_UNKNOWN', 'blob unknown to registry', 404);
-            }
-            set.headers['Content-Type'] = 'application/octet-stream';
-            set.headers['Docker-Content-Digest'] = digest;
-            set.headers['Content-Length'] = blob.size.toString();
-            return blob.body;
-        })
+    // 1. Base Check
+    app.get('/v2/', (c) => {
+        c.header('Docker-Distribution-Api-Version', 'registry/2.0');
+        return c.json({});
+    });
 
-        // 4. Initiate Upload
-        .post('/:name/blobs/uploads/', async ({ params: { name }, set, request }) => {
-            const uuid = await storage.initUpload(name);
-            set.status = 202;
-            set.headers['Location'] = `/v2/${name}/blobs/uploads/${uuid}`;
-            set.headers['Range'] = '0-0';
-            set.headers['Docker-Upload-UUID'] = uuid;
-            return;
-        })
+    // 2. Blob Existence Check
+    app.on('HEAD', '/v2/:name/blobs/:digest', async (c) => {
+        const { name, digest } = c.req.param();
+        const exists = await storage.hasBlob(name, digest);
+        if (!exists) {
+            c.status(404);
+            return c.body(null);
+        }
+        const blob = await storage.getBlob(name, digest);
+        if (blob) {
+            c.header('Content-Length', blob.size.toString());
+            c.header('Docker-Content-Digest', digest);
+        }
+        c.status(200);
+        return c.body(null);
+    });
 
-        // 5. Chunk Upload (PATCH)
-        .patch('/:name/blobs/uploads/:uuid', async ({ params: { name, uuid }, body, request, set }) => {
-            // In a real implementation, we'd handle Content-Range and appending.
-            // For MVP, we assume the client might send chunks.
-            // We'll just append to the file.
+    // 3. Pull Blob
+    app.get('/v2/:name/blobs/:digest', async (c) => {
+        const { name, digest } = c.req.param();
+        const blob = await storage.getBlob(name, digest);
+        if (!blob) {
+            throw new RegistryError('BLOB_UNKNOWN', 'blob unknown to registry', 404);
+        }
+        c.header('Content-Type', 'application/octet-stream');
+        c.header('Docker-Content-Digest', digest);
+        c.header('Content-Length', blob.size.toString());
+        return c.body(blob.body as any);
+    });
 
-            // Note: Elysia body parsing might try to parse JSON/Text. 
-            // We need raw body.
-            // Using `request.arrayBuffer()` or similar if body isn't auto-parsed.
+    // 4. Initiate Upload
+    app.post('/v2/:name/blobs/uploads/', async (c) => {
+        const { name } = c.req.param();
+        const uuid = await storage.initUpload(name);
+        c.status(202);
+        c.header('Location', `/v2/${name}/blobs/uploads/${uuid}`);
+        c.header('Range', '0-0');
+        c.header('Docker-Upload-UUID', uuid);
+        return c.body(null);
+    });
 
-            // For now, let's assume body is the chunk.
-            // We need to be careful about types here.
+    // 5. Chunk Upload (PATCH)
+    app.patch('/v2/:name/blobs/uploads/:uuid', async (c) => {
+        const { name, uuid } = c.req.param();
+        const body = await c.req.arrayBuffer();
 
-            await storage.appendUpload(name, uuid, body as any);
+        await storage.appendUpload(name, uuid, body);
 
-            set.status = 202;
-            set.headers['Location'] = `/v2/${name}/blobs/uploads/${uuid}`;
-            set.headers['Docker-Upload-UUID'] = uuid;
-            // We should return the current range, e.g. 0-<end>
-            return;
-        })
+        c.status(202);
+        c.header('Location', `/v2/${name}/blobs/uploads/${uuid}`);
+        c.header('Docker-Upload-UUID', uuid);
+        return c.body(null);
+    });
 
-        // 6. Complete Upload (PUT)
-        .put('/:name/blobs/uploads/:uuid', async ({ params: { name, uuid }, query: { digest }, body, set }) => {
-            if (!digest) {
-                throw new RegistryError('DIGEST_INVALID', 'digest missing', 400);
-            }
+    // 6. Complete Upload (PUT)
+    app.put('/v2/:name/blobs/uploads/:uuid', async (c) => {
+        const { name, uuid } = c.req.param();
+        const digest = c.req.query('digest');
 
-            // If body is present, it's the final chunk or the whole file
-            if (body) {
-                await storage.appendUpload(name, uuid, body as any);
-            }
+        if (!digest) {
+            throw new RegistryError('DIGEST_INVALID', 'digest missing', 400);
+        }
 
-            await storage.completeUpload(name, uuid, digest as string);
+        // If body is present, it's the final chunk or the whole file
+        const contentLength = c.req.header('content-length');
+        if (contentLength && parseInt(contentLength) > 0) {
+            const body = await c.req.arrayBuffer();
+            await storage.appendUpload(name, uuid, body);
+        }
 
-            set.status = 201;
-            set.headers['Location'] = `/v2/${name}/blobs/${digest}`;
-            set.headers['Docker-Content-Digest'] = digest as string;
-            return;
-        })
+        await storage.completeUpload(name, uuid, digest);
 
-        // 7. Push Manifest
-        .put('/:name/manifests/:reference', async ({ params: { name, reference }, request, headers, set }) => {
-            const contentType = headers['content-type'] || 'application/json';
+        c.status(201);
+        c.header('Location', `/v2/${name}/blobs/${digest}`);
+        c.header('Docker-Content-Digest', digest);
+        return c.body(null);
+    });
 
-            // Read raw body for digest calculation and storage
-            const manifestStr = await request.text();
+    // 7. Push Manifest
+    app.put('/v2/:name/manifests/:reference', async (c) => {
+        const { name, reference } = c.req.param();
+        const contentType = c.req.header('content-type') || 'application/json';
 
-            if (!manifestStr) {
-                throw new RegistryError('MANIFEST_INVALID', 'manifest missing', 400);
-            }
+        const manifestStr = await c.req.text();
 
-            const digest = await calculateDigest(manifestStr);
+        if (!manifestStr) {
+            throw new RegistryError('MANIFEST_INVALID', 'manifest missing', 400);
+        }
 
-            await storage.putManifest(name, reference, manifestStr, contentType);
+        const digest = await calculateDigest(manifestStr);
 
-            // Also store by digest if reference is a tag
-            // But for now, we just rely on the reference path.
-            // Ideally we should also store at .../manifests/<digest>
-            // And update the tag to point to <digest>.
+        await storage.putManifest(name, reference, manifestStr, contentType);
 
-            set.status = 201;
-            set.headers['Location'] = `/v2/${name}/manifests/${reference}`;
-            set.headers['Docker-Content-Digest'] = digest;
-            return;
-        })
+        c.status(201);
+        c.header('Location', `/v2/${name}/manifests/${reference}`);
+        c.header('Docker-Content-Digest', digest);
+        return c.body(null);
+    });
 
-        // 8. Pull Manifest
-        .get('/:name/manifests/:reference', async ({ params: { name, reference }, set }) => {
-            const manifest = await storage.getManifest(name, reference);
-            if (!manifest) {
-                throw new RegistryError('MANIFEST_UNKNOWN', 'manifest unknown', 404);
-            }
+    // 8. Pull Manifest
+    app.get('/v2/:name/manifests/:reference', async (c) => {
+        const { name, reference } = c.req.param();
+        const manifest = await storage.getManifest(name, reference);
+        if (!manifest) {
+            throw new RegistryError('MANIFEST_UNKNOWN', 'manifest unknown', 404);
+        }
 
-            // We need to calculate digest on the fly or store it.
-            // For now, let's read the body to calculate digest (expensive but correct for MVP)
-            // OR trust the metadata if we stored it.
-            // Let's try to read it.
+        c.header('Content-Type', manifest.httpMetadata?.contentType || 'application/json');
+        c.header('Docker-Content-Digest', 'sha256:TODO');
+        c.header('Content-Length', manifest.size.toString());
 
-            // Wait, manifest.body is a ReadableStream. If we read it, we consume it.
-            // We should tee it or just return it.
-            // Ideally we stored the digest in metadata.
+        return c.body(manifest.body as any);
+    });
 
-            set.headers['Content-Type'] = manifest.httpMetadata?.contentType || 'application/json';
-            set.headers['Docker-Content-Digest'] = 'sha256:TODO'; // Should retrieve from metadata
-            set.headers['Content-Length'] = manifest.size.toString();
+    // 9. Check Manifest
+    app.on('HEAD', '/v2/:name/manifests/:reference', async (c) => {
+        const { name, reference } = c.req.param();
+        const exists = await storage.hasManifest(name, reference);
+        if (!exists) {
+            c.status(404);
+            return c.body(null);
+        }
+        const manifest = await storage.getManifest(name, reference);
+        if (manifest) {
+            c.header('Content-Type', manifest.httpMetadata?.contentType || 'application/json');
+            c.header('Content-Length', manifest.size.toString());
+            c.header('Docker-Content-Digest', 'sha256:TODO');
+        }
+        c.status(200);
+        return c.body(null);
+    });
 
-            return manifest.body;
-        })
-
-        // 9. Check Manifest
-        .head('/:name/manifests/:reference', async ({ params: { name, reference }, set }) => {
-            const exists = await storage.hasManifest(name, reference);
-            if (!exists) {
-                set.status = 404;
-                return;
-            }
-            const manifest = await storage.getManifest(name, reference);
-            if (manifest) {
-                set.headers['Content-Type'] = manifest.httpMetadata?.contentType || 'application/json';
-                set.headers['Content-Length'] = manifest.size.toString();
-                set.headers['Docker-Content-Digest'] = 'sha256:TODO';
-            }
-            set.status = 200;
-        });
+    return app;
 };

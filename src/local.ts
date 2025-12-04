@@ -1,6 +1,6 @@
-import { Elysia } from 'elysia';
-import { swagger } from '@elysiajs/swagger';
-import { registry } from './registry';
+import { Hono } from 'hono';
+import { serve } from '@hono/node-server';
+import { createRegistry } from './registry';
 import { FSR2Bucket } from './r2-fs';
 import { mkdir } from 'fs/promises';
 
@@ -10,11 +10,17 @@ await mkdir(STORAGE_DIR, { recursive: true });
 
 const bucket = new FSR2Bucket(STORAGE_DIR);
 
-const app = new Elysia()
-    .use(swagger())
-    .get('/', () => 'Hello from Local Bun Registry!')
-    .use(registry({ REGISTRY_BUCKET: bucket as any }))
-    .listen(3000);
+const app = new Hono();
 
-console.log(`🦊 Local Registry is running at ${app.server?.hostname}:${app.server?.port}`);
+app.get('/', (c) => c.text('Hello from Local Bun Registry!'));
+
+const registry = createRegistry({ REGISTRY_BUCKET: bucket as any });
+app.route('/', registry);
+
+console.log(`🦊 Local Registry is running at http://localhost:3000`);
 console.log(`📂 Storage: ${STORAGE_DIR}`);
+
+serve({
+    fetch: app.fetch,
+    port: 3000
+});
