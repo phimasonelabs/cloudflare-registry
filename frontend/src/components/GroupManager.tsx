@@ -71,20 +71,30 @@ export function GroupManager() {
 
     const addMember = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedGroup) return;
+        if (!selectedGroup || !newMemberId.trim()) return;
 
         try {
+            // Detect if input is email or user ID
+            const isEmail = newMemberId.includes('@');
+            const payload = isEmail
+                ? { email: newMemberId.trim(), role: 'member' }
+                : { userId: newMemberId.trim(), role: 'member' };
+
             const res = await fetch(`/api/groups/${selectedGroup.id}/members`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: newMemberId, role: 'member' }),
+                body: JSON.stringify(payload),
             });
-            if (!res.ok) throw new Error('Failed to add member');
+
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || 'Failed to add member');
+            }
 
             await loadMembers(selectedGroup.id);
             setNewMemberId('');
         } catch (err) {
-            setError('Failed to add member');
+            setError(err instanceof Error ? err.message : 'Failed to add member');
         }
     };
 

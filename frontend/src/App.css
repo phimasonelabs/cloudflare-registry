@@ -1473,3 +1473,31 @@ body {
   align-self: flex-start;
 }
 
+
+/* Remove Member Button - Improved */
+.btn-remove {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.btn-remove:hover {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+  border-color: #dc2626;
+}
+
+.btn-remove::before {
+  content: "✕";
+  font-size: 0.75rem;
+}
+

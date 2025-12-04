@@ -107,20 +107,35 @@ groups.post('/:id/members', async (c) => {
     }
 
     const body = await c.req.json();
-    const { userId, role } = body;
+    const { userId, email, role } = body;
 
-    if (!userId) {
-        return c.json({ error: 'userId is required' }, 400);
+    if (!userId && !email) {
+        return c.json({ error: 'userId or email is required' }, 400);
     }
 
-    // Verify user exists
-    const user = await db.getUserById(userId);
-    if (!user) {
-        return c.json({ error: 'User not found' }, 404);
+    let targetUser;
+
+    // Try to find user by email first, then by ID
+    if (email) {
+        targetUser = await db.getUserByEmail(email);
+        if (!targetUser) {
+            return c.json({ error: 'No user found with that email address' }, 404);
+        }
+    } else {
+        targetUser = await db.getUserById(userId);
+        if (!targetUser) {
+            return c.json({ error: 'User not found with that ID' }, 404);
+        }
     }
 
-    await db.addGroupMember(groupId, userId, role || 'member');
-    return c.json({ success: true });
+    // Check if user is already a member
+    const members = await db.getGroupMembers(groupId);
+    if (members.some(m => m.user_id === targetUser.id)) {
+        return c.json({ error: 'User is already a member of this team' }, 409);
+    }
+
+    await db.addGroupMember(groupId, targetUser.id, role || 'member');
+    return c.json({ success: true, user: { id: targetUser.id, email: targetUser.email } });
 });
 
 // DELETE /api/groups/:id/members/:userId - Remove member
