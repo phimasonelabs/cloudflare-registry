@@ -106,4 +106,31 @@ export class RegistryStorage {
     async cancelUpload(name: string, uuid: string) {
         await this.bucket.delete(this.getUploadPath(name, uuid));
     }
+
+    async listRepositories() {
+        // List all objects with prefix v2/
+        const listed = await this.bucket.list({ prefix: 'v2/' });
+
+        const repos = new Map<string, Set<string>>();
+
+        for (const obj of listed.objects) {
+            // Parse paths like: v2/<name>/manifests/<reference>
+            const parts = obj.key.split('/');
+            if (parts.length >= 4 && parts[2] === 'manifests') {
+                const repoName = parts[1];
+                const tag = parts[3];
+
+                if (!repos.has(repoName)) {
+                    repos.set(repoName, new Set());
+                }
+                repos.get(repoName)!.add(tag);
+            }
+        }
+
+        // Convert to array format
+        return Array.from(repos.entries()).map(([name, tags]) => ({
+            name,
+            tags: Array.from(tags)
+        }));
+    }
 }

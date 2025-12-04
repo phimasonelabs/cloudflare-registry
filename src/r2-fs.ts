@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readFile, unlink, stat } from 'fs/promises';
+import { mkdir, writeFile, readFile, unlink, stat, readdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { existsSync } from 'fs';
 
@@ -85,7 +85,50 @@ export class FSR2Bucket {
 
     async delete(key: string) {
         const path = this.getPath(key);
-        if (existsSync(path)) await unlink(path);
-        if (existsSync(this.getMetaPath(key))) await unlink(this.getMetaPath(key));
+        const metaPath = this.getMetaPath(key);
+        try {
+            if (existsSync(path)) await unlink(path);
+            if (existsSync(metaPath)) await unlink(metaPath);
+        } catch (err) {
+            // Ignore errors if file doesn't exist
+        }
+    }
+
+    async list(options?: { prefix?: string; limit?: number; cursor?: string }) {
+        const { prefix = '', limit = 1000 } = options || {};
+        const objects: Array<{ key: string }> = [];
+
+        // Recursively walk directory
+        const walk = async (dir: string, baseKey: string = '') => {
+            if (!existsSync(dir)) return;
+
+            const entries = await readdir(dir, { withFileTypes: true });
+
+            for (const entry of entries) {
+                const fullPath = join(dir, entry.name);
+                const key = baseKey ? `${baseKey}/${entry.name}` : entry.name;
+
+                // Skip metadata files
+                if (entry.name.endsWith('.meta.json')) continue;
+
+                if (entry.isDirectory()) {
+                    await walk(fullPath, key);
+                } else {
+                    // Check if this key matches the prefix
+                    if (!prefix || key.startsWith(prefix)) {
+                        objects.push({ key });
+                        if (objects.length >= limit) return;
+                    }
+                }
+            }
+        };
+
+        await walk(this.root);
+
+        return {
+            objects,
+            truncated: false,
+            cursor: undefined
+        };
     }
 }
