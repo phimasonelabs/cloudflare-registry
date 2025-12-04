@@ -22,7 +22,8 @@
     "deploy": "wrangler deploy",
     "start:local": "bun run src/local.ts",
     "test": "bun test",
-    "build:frontend": "cd frontend && bun install && bun run build",
-    "build": "bun run build:frontend"
+    "build:frontend": "cd frontend && bun install && bun run build && cd .. && bun run scripts/embed-frontend.ts",
+    "build": "bun run build:frontend",
+    "predeploy": "bun run build:frontend"
   }
 }
