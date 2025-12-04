@@ -47,13 +47,16 @@ export function authMiddleware(required: boolean = true) {
                 // Docker uses Basic Auth - extract token from password field
                 const base64 = authHeader.substring(6);
                 const decoded = atob(base64);
-                const [_, password] = decoded.split(':', 2);
+                const [username, password] = decoded.split(':', 2);
+                console.log('[AUTH] Basic Auth - Username:', username, 'Password starts with:', password?.substring(0, 10));
                 token = password; // Docker passes token as password
             }
         }
 
         if (!token) {
             if (required) {
+                // Docker needs WWW-Authenticate header to know what auth method to use
+                c.header('WWW-Authenticate', 'Basic realm="Docker Registry"');
                 return c.json({ error: 'Unauthorized' }, 401);
             }
             await next();
@@ -62,8 +65,10 @@ export function authMiddleware(required: boolean = true) {
 
         // Check if token is a PAT (starts with 'cfr_' prefix)
         if (token.startsWith('cfr_')) {
+            console.log('[AUTH] Validating PAT token:', token.substring(0, 10) + '...');
             const patValidation = await db.validatePAT(token);
             if (!patValidation) {
+                console.log('[AUTH] PAT validation failed for token');
                 if (required) {
                     return c.json({ error: 'Invalid or expired token' }, 401);
                 }
@@ -71,6 +76,7 @@ export function authMiddleware(required: boolean = true) {
                 return;
             }
 
+            console.log('[AUTH] PAT validated successfully for user:', patValidation.user.email, 'scopes:', patValidation.scopes);
             // Set auth context with PAT user
             c.set('auth', { user: patValidation.user, sessionId: 'pat', scopes: patValidation.scopes });
             await next();

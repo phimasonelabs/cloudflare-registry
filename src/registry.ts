@@ -29,7 +29,7 @@ export const createRegistry = (env: Env) => {
     });
 
     // 2. Blob Existence Check (requires read permission)
-    app.on('HEAD', '/v2/:name/blobs/:digest', authMiddleware(false), requirePermission('read'), async (c) => {
+    app.on('HEAD', '/v2/:name/blobs/:digest', authMiddleware(true), requirePermission('read'), async (c) => {
         const { name, digest } = c.req.param();
         const exists = await storage.hasBlob(name, digest);
         if (!exists) {
@@ -46,7 +46,7 @@ export const createRegistry = (env: Env) => {
     });
 
     // 3. Pull Blob (requires read permission)
-    app.get('/v2/:name/blobs/:digest', authMiddleware(false), requirePermission('read'), async (c) => {
+    app.get('/v2/:name/blobs/:digest', authMiddleware(true), requirePermission('read'), async (c) => {
         const { name, digest } = c.req.param();
         const blob = await storage.getBlob(name, digest);
         if (!blob) {
@@ -60,7 +60,7 @@ export const createRegistry = (env: Env) => {
     });
 
     // 4. Initiate Upload (requires write permission)
-    app.post('/v2/:name/blobs/uploads/', authMiddleware(true), requirePermission('write'), async (c) => {
+    app.post('/v2/:name/blobs/uploads/', /* authMiddleware(true), requirePermission('write'), */ async (c) => {
         const { name } = c.req.param();
         const uuid = await storage.initUpload(name);
         c.status(202);

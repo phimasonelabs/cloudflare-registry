@@ -42,5 +42,5 @@ console.log(`📂 Storage: ${STORAGE_DIR}`);
 
 serve({
     fetch: app.fetch,
-    port: 3000
+    port: 8787
 });
