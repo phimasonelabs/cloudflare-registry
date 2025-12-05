@@ -57,14 +57,23 @@ export default {
 
         // SPA routing: serve frontend HTML for all non-API, non-registry routes
         // This allows client-side routing to work on refresh
-        app.get('*', (c) => {
-            const path = new URL(c.req.url).pathname;
-            // Don't serve SPA for API or Docker registry routes
-            if (path.startsWith('/api') || path.startsWith('/auth') || path.startsWith('/v2')) {
-                return c.notFound();
+        // IMPORTANT: This must come AFTER all API/registry routes
+        app.all('*', (c) => {
+            const path = new URL(c.req.url).pathname
+
+            // Don't serve SPA for API, auth, or Docker registry routes
+            if (path.startsWith('/api/') ||
+                path.startsWith('/auth/') ||
+                path.startsWith('/v2/') ||
+                path === '/api' ||
+                path === '/auth' ||
+                path === '/v2') {
+                return c.notFound()
             }
-            return c.html(frontendHTML);
-        });
+
+            // Serve frontend HTML for all other routes (SPA routes)
+            return c.html(frontendHTML)
+        })
 
         return app.fetch(request, env, ctx);
     }
