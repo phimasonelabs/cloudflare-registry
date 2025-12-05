@@ -41,14 +41,20 @@ export function RepositoryListItem({ repository }: RepositoryListItemProps) {
 
                     {/* Latest Tag - 2 cols */}
                     <div className="col-span-2">
-                        <span className="text-sm text-white/80 font-mono truncate block">
+                        <span
+                            className="text-sm text-white/80 font-mono truncate block"
+                            title={latestTag}
+                        >
                             {latestTag.startsWith('sha256:') ? latestTag.substring(0, 15) + '...' : latestTag}
                         </span>
                     </div>
 
                     {/* Pull Command - 4 cols */}
                     <div className="col-span-4 flex items-center gap-2">
-                        <code className="flex-1 text-xs text-cyan-300 font-mono bg-black/20 px-3 py-2 rounded-lg truncate">
+                        <code
+                            className="flex-1 text-xs text-cyan-300 font-mono bg-black/20 px-3 py-2 rounded-lg truncate"
+                            title={pullCommand}
+                        >
                             {pullCommand}
                         </code>
                         <div onClick={(e) => e.preventDefault()}>
