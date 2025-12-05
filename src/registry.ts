@@ -147,14 +147,31 @@ export const createRegistry = (env: Env) => {
             throw new RegistryError('DIGEST_INVALID', 'digest missing', 400);
         }
 
-        // If body is present, it's the final chunk or the whole file
+        // Check content-length to see if this is a monolithic upload
         const contentLength = c.req.header('content-length');
-        if (contentLength && parseInt(contentLength) > 0) {
-            const body = await c.req.arrayBuffer();
-            await storage.appendUpload(name, uuid, body);
-        }
+        const hasBody = contentLength && parseInt(contentLength) > 0;
 
-        await storage.completeUpload(name, uuid, digest);
+        if (hasBody) {
+            // Monolithic upload: entire blob sent in this PUT request
+            const body = await c.req.arrayBuffer();
+
+            // Verify digest matches
+            const actualDigest = await calculateDigest(body);
+            if (actualDigest !== digest) {
+                throw new RegistryError('DIGEST_INVALID', 'digest mismatch', 400);
+            }
+
+            // Store directly as final blob, skip session
+            await storage.putBlob(name, digest, body);
+        } else {
+            // Chunked upload: finalize from upload session
+            try {
+                await storage.completeUpload(name, uuid, digest);
+            } catch (err) {
+                const message = err instanceof Error ? err.message : 'Unknown error';
+                throw new RegistryError('BLOB_UPLOAD_UNKNOWN', `Upload session not found: ${message}`, 404);
+            }
+        }
 
         c.status(201);
         c.header('Location', `/v2/${name}/blobs/${digest}`);
