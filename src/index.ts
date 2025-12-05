@@ -52,12 +52,17 @@ export default {
         app.route('/api/tokens', tokens);
 
         // Middleware: Normalize trailing slashes to prevent routing issues
-        // This ensures /v2 and /v2/ are treated the same
+        // EXCEPT for /v2 API routes which require trailing slashes per Docker registry spec
         app.use('*', async (c, next) => {
             const url = new URL(c.req.url);
             const path = url.pathname;
 
-            // If path has trailing slash (except root), redirect to non-slash version
+            // Skip trailing slash normalization for /v2 routes (Docker registry API)
+            if (path.startsWith('/v2')) {
+                return await next();
+            }
+
+            // For frontend routes, strip trailing slashes (except root)
             if (path.length > 1 && path.endsWith('/')) {
                 url.pathname = path.slice(0, -1);
                 return c.redirect(url.toString(), 301);
