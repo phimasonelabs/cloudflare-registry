@@ -24,7 +24,7 @@ export const createRegistry = (env: Env) => {
     });
 
     // 1. Base Check - validates credentials if provided
-    app.get('/v2/', async (c) => {
+    app.get('/', async (c) => {
         c.header('Docker-Distribution-Api-Version', 'registry/2.0');
 
         // If Authorization header is present, validate it
@@ -85,7 +85,7 @@ export const createRegistry = (env: Env) => {
     });
 
     // 3. Pull Blob (requires read permission)
-    app.get('/v2/:name/blobs/:digest', authMiddleware(true), requirePermission('read'), async (c) => {
+    app.get('/:name/blobs/:digest', authMiddleware(true), requirePermission('read'), async (c) => {
         const { name, digest } = c.req.param();
         const blob = await storage.getBlob(name, digest);
         if (!blob) {
@@ -99,7 +99,7 @@ export const createRegistry = (env: Env) => {
     });
 
     // 4. Initiate Upload (requires write permission)
-    app.post('/v2/:name/blobs/uploads/', /* authMiddleware(true), requirePermission('write'), */ async (c) => {
+    app.post('/:name/blobs/uploads/', /* authMiddleware(true), requirePermission('write'), */ async (c) => {
         const { name } = c.req.param();
         const uuid = await storage.initUpload(name);
         c.status(202);
@@ -110,7 +110,7 @@ export const createRegistry = (env: Env) => {
     });
 
     // 5. Chunk Upload (PATCH)
-    app.patch('/v2/:name/blobs/uploads/:uuid', async (c) => {
+    app.patch('/:name/blobs/uploads/:uuid', async (c) => {
         const { name, uuid } = c.req.param();
         const body = await c.req.arrayBuffer();
 
@@ -123,7 +123,7 @@ export const createRegistry = (env: Env) => {
     });
 
     // 6. Complete Upload (PUT)
-    app.put('/v2/:name/blobs/uploads/:uuid', async (c) => {
+    app.put('/:name/blobs/uploads/:uuid', async (c) => {
         const { name, uuid } = c.req.param();
         const digest = c.req.query('digest');
 
@@ -147,7 +147,7 @@ export const createRegistry = (env: Env) => {
     });
 
     // 7. Push Manifest
-    app.put('/v2/:name/manifests/:reference', async (c) => {
+    app.put('/:name/manifests/:reference', async (c) => {
         const { name, reference } = c.req.param();
         const contentType = c.req.header('content-type') || 'application/json';
 
@@ -168,7 +168,7 @@ export const createRegistry = (env: Env) => {
     });
 
     // 8. Pull Manifest (handles both GET and HEAD)
-    app.get('/v2/:name/manifests/:reference', async (c) => {
+    app.get('/:name/manifests/:reference', async (c) => {
         try {
             const { name, reference } = c.req.param();
             const isHead = c.req.method === 'HEAD';
