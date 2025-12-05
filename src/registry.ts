@@ -117,12 +117,23 @@ export const createRegistry = (env: Env) => {
     // 4. Initiate Upload (requires write permission)
     app.post('/:name/blobs/uploads/', /* authMiddleware(true), requirePermission('write'), */ async (c) => {
         const { name } = c.req.param();
-        const uuid = await storage.initUpload(name);
-        c.status(202);
-        c.header('Location', `/v2/${name}/blobs/uploads/${uuid}`);
-        c.header('Range', '0-0');
-        c.header('Docker-Upload-UUID', uuid);
-        return c.body(null);
+
+        let debugInfo = `name=${name}`;
+        try {
+            const uuid = await storage.initUpload(name);
+            debugInfo += `,uuid=${uuid},success=true`;
+
+            c.status(202);
+            c.header('Location', `/v2/${name}/blobs/uploads/${uuid}`);
+            c.header('Range', '0-0');
+            c.header('Docker-Upload-UUID', uuid);
+            c.header('X-Debug-Upload-Init', debugInfo);
+            return c.body(null);
+        } catch (err) {
+            debugInfo += `,success=false,error=${err instanceof Error ? err.message : 'unknown'}`;
+            c.header('X-Debug-Upload-Init', debugInfo);
+            throw new RegistryError('BLOB_UPLOAD_INVALID', `Failed to initialize upload: ${err instanceof Error ? err.message : 'unknown'}`, 500);
+        }
     });
 
     // 5. Chunk Upload (PATCH)
