@@ -5,6 +5,7 @@ import { UserMenu } from './components/UserMenu'
 import { SettingsLayout } from './components/SettingsLayout'
 import { OverviewPage } from './pages/OverviewPage'
 import { BrowsePage } from './pages/BrowsePage'
+import { RepositoryDetailPage } from './pages/RepositoryDetailPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 
 function App() {
@@ -106,6 +107,7 @@ function App() {
                 <Routes>
                     <Route path="/" element={<OverviewPage />} />
                     <Route path="/browse" element={<BrowsePage />} />
+                    <Route path="/browse/:repository" element={<RepositoryDetailPage />} />
                     <Route path="/settings/*" element={<SettingsLayout />} />
                     <Route path="*" element={<NotFoundPage />} />
                 </Routes>

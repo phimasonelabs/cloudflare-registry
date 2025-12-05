@@ -43,6 +43,19 @@ export default {
             }
         });
 
+        // API endpoint to get repository details (artifacts, tags, sizes)
+        app.get('/api/repositories/:name', authMiddleware(false), async (c) => {
+            try {
+                const { name } = c.req.param();
+                const storage = new RegistryStorage(env.REGISTRY_BUCKET);
+                const details = await storage.getRepositoryDetails(name);
+                return c.json(details);
+            } catch (err) {
+                console.error('Error getting repository details:', err);
+                return c.json({ error: 'Failed to get repository details' }, 500);
+            }
+        });
+
         // Mount auth routes
         app.route('/auth', auth);
 

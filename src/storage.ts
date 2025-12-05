@@ -133,4 +133,59 @@ export class RegistryStorage {
             tags: Array.from(tags)
         }));
     }
+
+    async getRepositoryDetails(name: string) {
+        // List all manifests for this repository
+        const listed = await this.bucket.list({ prefix: `v2/${name}/manifests/` });
+
+        const artifacts: Array<{
+            tag: string
+            digest: string
+            size?: number
+        }> = [];
+
+        for (const obj of listed.objects) {
+            // Parse path: v2/<name>/manifests/<tag>
+            const parts = obj.key.split('/');
+            if (parts.length >= 4) {
+                const tag = parts[3];
+
+                // Get manifest to extract digest
+                const manifest = await this.bucket.get(obj.key);
+                if (manifest && manifest.body) {
+                    // Read manifest content to calculate digest
+                    const chunks: Uint8Array[] = [];
+                    const reader = manifest.body.getReader();
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        chunks.push(value);
+                    }
+
+                    const manifestBytes = new Uint8Array(chunks.reduce((acc, chunk) => acc + chunk.length, 0));
+                    let offset = 0;
+                    for (const chunk of chunks) {
+                        manifestBytes.set(chunk, offset);
+                        offset += chunk.length;
+                    }
+
+                    // Calculate digest
+                    const hashBuffer = await crypto.subtle.digest('SHA-256', manifestBytes);
+                    const hashArray = Array.from(new Uint8Array(hashBuffer));
+                    const digest = 'sha256:' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+                    artifacts.push({
+                        tag,
+                        digest,
+                        size: manifest.size
+                    });
+                }
+            }
+        }
+
+        return {
+            name,
+            artifacts
+        };
+    }
 }
