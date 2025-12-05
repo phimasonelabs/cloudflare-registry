@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { UserAvatar } from './UserAvatar';
 
-export function UserMenu({ onNavigate }: { onNavigate?: (tab: string) => void }) {
+export function UserMenu() {
     const { user, logout } = useAuth();
+    const navigate = useNavigate();
     const [isOpen, setIsOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
 
@@ -19,11 +21,9 @@ export function UserMenu({ onNavigate }: { onNavigate?: (tab: string) => void })
 
     if (!user) return null;
 
-    const handleNavigate = (tab: string) => {
-        if (onNavigate) {
-            onNavigate(tab);
-            setIsOpen(false);
-        }
+    const handleNavigate = (path: string) => {
+        navigate(path);
+        setIsOpen(false);
     };
 
     return (
@@ -48,12 +48,12 @@ export function UserMenu({ onNavigate }: { onNavigate?: (tab: string) => void })
 
                     <div className="dropdown-divider"></div>
 
-                    <button className="dropdown-item" onClick={() => handleNavigate('browse')}>
+                    <button className="dropdown-item" onClick={() => handleNavigate('/browse')}>
                         <span className="item-icon">📦</span>
                         My Repositories
                     </button>
 
-                    <button className="dropdown-item" onClick={() => handleNavigate('settings')}>
+                    <button className="dropdown-item" onClick={() => handleNavigate('/settings')}>
                         <span className="item-icon">⚙️</span>
                         Settings
                     </button>

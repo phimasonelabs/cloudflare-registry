@@ -51,9 +51,20 @@ export default {
         app.route('/api/repositories', permissions);
         app.route('/api/tokens', tokens);
 
-        // Mount registry routes
+        // Mount registry routes (Docker API)
         const registry = createRegistry(env);
-        app.route('/', registry);
+        app.route('/v2', registry);
+
+        // SPA routing: serve frontend HTML for all non-API, non-registry routes
+        // This allows client-side routing to work on refresh
+        app.get('*', (c) => {
+            const path = new URL(c.req.url).pathname;
+            // Don't serve SPA for API or Docker registry routes
+            if (path.startsWith('/api') || path.startsWith('/auth') || path.startsWith('/v2')) {
+                return c.notFound();
+            }
+            return c.html(frontendHTML);
+        });
 
         return app.fetch(request, env, ctx);
     }
