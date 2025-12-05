@@ -157,14 +157,20 @@ export const createRegistry = (env: Env) => {
         }
 
         const digest = await calculateDigest(manifestStr);
+        console.log(`[PUT /v2/:name/manifests/:reference] name=${name}, reference=${reference}, digest=${digest}`);
 
         // Store manifest by the provided reference (tag or digest)
         await storage.putManifest(name, reference, manifestStr, contentType);
+        console.log(`[PUT /v2/:name/manifests/:reference] Stored by reference: ${reference}`);
 
         // ALSO store by digest if reference is not already a digest
         // This allows pulling by digest: docker pull registry/image@sha256:...
         if (!reference.startsWith('sha256:')) {
+            console.log(`[PUT /v2/:name/manifests/:reference] Also storing by digest: ${digest}`);
             await storage.putManifest(name, digest, manifestStr, contentType);
+            console.log(`[PUT /v2/:name/manifests/:reference] Successfully stored by digest: ${digest}`);
+        } else {
+            console.log(`[PUT /v2/:name/manifests/:reference] Reference is already a digest, skipping duplicate storage`);
         }
 
         c.header('Location', `/v2/${name}/manifests/${reference}`);
